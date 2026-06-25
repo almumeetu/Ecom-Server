@@ -1,0 +1,873 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ======================================================
+// 📌 CORE ENUMS (SYSTEM CONSTANTS)
+// ======================================================
+
+enum MediaType {
+  image
+  video
+}
+
+enum MediaProvider {
+  s3
+  cloudinary
+  local
+}
+
+enum ProductStatus {
+  active
+  inactive
+  draft
+}
+
+enum InventoryReason {
+  sale
+  restock
+  return
+  correction
+  manual
+}
+
+enum OrderStatus {
+  pending
+  processing
+  shipped
+  delivered
+  cancelled
+  returned
+}
+
+enum PaymentStatus {
+  unpaid
+  paid
+  refunded
+}
+
+enum OrderType {
+  retail
+  wholesale
+}
+
+enum WholesaleRequestStatus {
+  pending
+  info_requested
+  approved
+  rejected
+  converted
+}
+
+enum CouponType {
+  percentage
+  fixed
+}
+
+enum DiscountType {
+  percentage
+  fixed
+}
+
+enum PaymentTransactionStatus {
+  pending
+  success
+  failed
+}
+
+// ======================================================
+// 👤 1. AUTH & USER SYSTEM
+// ======================================================
+// Handles authentication, roles, permissions, sessions
+
+model Role {
+  id   String @id @default(uuid())
+  name String
+
+  users       User[]
+  permissions Permission[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("roles")
+}
+
+model Permission {
+  id   String @id @default(uuid())
+  name String
+
+  roles Role[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("permissions")
+}
+
+model User {
+  id       String  @id @default(uuid())
+  name     String
+  email    String  @unique
+  password String
+  phone    String?
+
+  emailVerifiedAt DateTime? @map("email_verified_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+
+  role   Role?   @relation(fields: [roleId], references: [id])
+  roleId String? @map("role_id")
+
+  // relations
+  sessions       UserSession[]
+  passwordResets PasswordReset[]
+  addresses      Address[]
+  profile        UserProfile?
+  carts          Cart[]
+  wishlists      Wishlist[]
+  orders         Order[]
+  reviews        Review[]
+  notifications  Notification[]
+  activityLogs   ActivityLog[]
+  wholesaleRequests WholesaleOrderRequest[]
+
+  @@map("users")
+}
+
+model UserSession {
+  id        String   @id @default(uuid())
+  token     String
+  userAgent String?  @map("user_agent")
+  ipAddress String?  @map("ip_address")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String @map("user_id")
+
+  @@map("user_sessions")
+}
+
+model PasswordReset {
+  id        String   @id @default(uuid())
+  email     String
+  token     String
+  expiresAt DateTime @map("expires_at")
+
+  user   User?   @relation(fields: [userId], references: [id])
+  userId String?
+
+  @@map("password_resets")
+}
+
+// ======================================================
+// 🧾 2. MEDIA SYSTEM (CENTRAL FILE STORAGE)
+// ======================================================
+// All images/videos stored here and reused everywhere
+
+model Media {
+  id        String        @id @default(uuid())
+  url       String
+  type      MediaType
+  provider  MediaProvider
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  productMedia ProductMedia[]
+  userProfile  UserProfile?
+
+  @@map("media")
+}
+
+// ======================================================
+// 📍 3. USER PROFILE & ADDRESS SYSTEM
+// ======================================================
+
+model UserProfile {
+  id        String   @id @default(uuid())
+  bio       String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String @unique @map("user_id")
+
+  avatarMedia   Media?  @relation(fields: [avatarMediaId], references: [id])
+  avatarMediaId String? @unique @map("avatar_media_id")
+
+  @@map("user_profiles")
+}
+
+model Address {
+  id           String   @id @default(uuid())
+  fullName     String   @map("full_name")
+  phone        String
+  addressLine1 String   @map("address_line1")
+  addressLine2 String?  @map("address_line2")
+  city         String
+  state        String
+  postalCode   String   @map("postal_code")
+  country      String
+  isDefault    Boolean  @default(false) @map("is_default")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String @map("user_id")
+
+  orders Order[]
+
+  @@map("addresses")
+}
+
+// ======================================================
+// 🏷️ 4. CATEGORY & BRAND SYSTEM
+// ======================================================
+
+model Category {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  imageUrl  String?  @map("image_url")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  parent   Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  parentId String?
+  children Category[] @relation("CategoryHierarchy")
+
+  products Product[]
+
+  @@map("categories")
+}
+
+model Brand {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  logoUrl   String?  @map("logo_url")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  products Product[]
+
+  @@map("brands")
+}
+
+model Unit {
+  id          String   @id @default(uuid())
+  name        String
+  code        String   @unique
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  products Product[]
+
+  @@map("units")
+}
+
+// ======================================================
+// 📦 5. PRODUCT SYSTEM (CORE)
+// ======================================================
+// Supports both: variant products + simple products
+
+model Product {
+  id          String        @id @default(uuid())
+  name        String
+  slug        String        @unique
+  description String?
+  status      ProductStatus @default(draft)
+
+  metaTitle       String? @map("meta_title")
+  metaDescription String? @map("meta_description")
+  metaKeywords    String? @map("meta_keywords")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  brand   Brand  @relation(fields: [brandId], references: [id])
+  brandId String
+
+  category   Category @relation(fields: [categoryId], references: [id])
+  categoryId String
+
+  unit   Unit?   @relation(fields: [unitId], references: [id])
+  unitId String? @map("unit_id")
+
+  // media
+  images ProductImage[]
+  media  ProductMedia[]
+
+  // variants system
+  variants ProductVariant[]
+
+  // relations
+  wishlists        Wishlist[]
+  reviews          Review[]
+  orderItems       OrderItem[]
+  tags             Tag[]
+  discountProducts DiscountProduct[]
+  wholesaleRequestItems WholesaleOrderRequestItem[]
+
+  @@map("products")
+}
+
+model Tag {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  products Product[]
+
+  @@map("tags")
+}
+
+// legacy/simple images (can be replaced later by media system)
+model ProductImage {
+  id         String   @id @default(uuid())
+  imageUrl   String   @map("image_url")
+  isFeatured Boolean  @default(false)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  product   Product @relation(fields: [productId], references: [id])
+  productId String
+
+  @@map("product_images")
+}
+
+// central media link for product
+model ProductMedia {
+  id         String  @id @default(uuid())
+  isFeatured Boolean @default(false)
+  sortOrder  Int     @default(0)
+
+  product   Product @relation(fields: [productId], references: [id])
+  productId String
+
+  media   Media  @relation(fields: [mediaId], references: [id])
+  mediaId String
+
+  @@map("product_media")
+}
+
+// ======================================================
+// 🧩 6. ATTRIBUTE & VARIANT SYSTEM
+// ======================================================
+// Used for: size, color, RAM, storage etc.
+
+model Attribute {
+  id   String @id @default(uuid())
+  name String
+
+  values AttributeValue[]
+
+  @@map("attributes")
+}
+
+model AttributeValue {
+  id    String @id @default(uuid())
+  value String
+
+  attribute   Attribute @relation(fields: [attributeId], references: [id])
+  attributeId String
+
+  variantAttributes ProductVariantAttribute[]
+
+  @@map("attribute_values")
+}
+
+model ProductVariant {
+  id                  String   @id @default(uuid())
+  sku                 String   @unique
+  price               Decimal  @db.Decimal(10, 2)
+  cost                Decimal? @db.Decimal(10, 2)
+  stockQuantity       Int      @default(0)
+  stockAlertThreshold Int      @default(10)
+  isDefault           Boolean  @default(false)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  product   Product @relation(fields: [productId], references: [id])
+  productId String
+
+  attributes    ProductVariantAttribute[]
+  inventoryLogs InventoryLog[]
+  cartItems     CartItem[]
+  orderItems    OrderItem[]
+  wholesaleRequestItems WholesaleOrderRequestItem[]
+
+  @@map("product_variants")
+}
+
+model ProductVariantAttribute {
+  id String @id @default(uuid())
+
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
+  variantId String
+
+  attributeValue   AttributeValue @relation(fields: [attributeValueId], references: [id])
+  attributeValueId String
+
+  @@map("product_variant_attributes")
+}
+
+// ======================================================
+// 📊 7. INVENTORY SYSTEM
+// ======================================================
+
+model InventoryLog {
+  id          String          @id @default(uuid())
+  change      Int
+  reason      InventoryReason
+  referenceId String?
+  note        String?
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
+  variantId String
+
+  @@map("inventory_logs")
+}
+
+// ======================================================
+// 🛒 8. CART & WISHLIST SYSTEM
+// ======================================================
+
+model Cart {
+  id        String   @id @default(uuid())
+  sessionId String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
+
+  items CartItem[]
+
+  @@map("carts")
+}
+
+model CartItem {
+  id       String @id @default(uuid())
+  quantity Int
+
+  cart   Cart   @relation(fields: [cartId], references: [id])
+  cartId String
+
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
+  variantId String
+
+  @@map("cart_items")
+}
+
+model Wishlist {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
+
+  product   Product @relation(fields: [productId], references: [id])
+  productId String
+
+  @@unique([userId, productId])
+  @@map("wishlists")
+}
+
+// ======================================================
+// 📦 9. ORDER SYSTEM (CORE BUSINESS)
+// ======================================================
+
+model Order {
+  id            String        @id @default(uuid())
+  orderNumber   String        @unique
+  status        OrderStatus   @default(pending)
+  paymentStatus PaymentStatus @default(unpaid)
+
+  total        Decimal   @db.Decimal(10, 2)
+  discount     Decimal   @default(0)
+  shippingCost Decimal   @default(0)
+  tax          Decimal   @default(0)
+  orderType    OrderType @default(retail)
+
+  placedAt  DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Authenticated user (null for guest orders)
+  user   User?  @relation(fields: [userId], references: [id])
+  userId String?
+
+  // Address relation for authenticated orders (null for guest orders)
+  address   Address? @relation(fields: [addressId], references: [id])
+  addressId String?
+
+  // Guest order info + shipping address (stored as JSON)
+  shippingAddress Json? @map("shipping_address")
+
+  items      OrderItem[]
+  statusLogs OrderStatusLog[]
+  payments   Payment[]
+  shipments  Shipment[]
+
+  // 1:1 link back to the wholesale request this order was created from (FK lives on the request)
+  wholesaleRequest WholesaleOrderRequest?
+
+  @@map("orders")
+}
+
+model WholesaleOrderRequest {
+  id            String                 @id @default(uuid())
+  requestNumber String                 @unique @map("request_number")
+  status        WholesaleRequestStatus @default(pending)
+
+  customerNote       String? @map("customer_note")
+  adminNote          String? @map("admin_note")
+  infoRequestMessage String? @map("info_request_message")
+  contactPhone       String? @map("contact_phone")
+
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  reviewedAt DateTime? @map("reviewed_at")
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String @map("user_id")
+
+  order   Order?  @relation(fields: [orderId], references: [id])
+  orderId String? @unique @map("order_id")
+
+  items WholesaleOrderRequestItem[]
+
+  @@map("wholesale_order_requests")
+}
+
+model WholesaleOrderRequestItem {
+  id                String   @id @default(uuid())
+  requestedQuantity Int      @map("requested_quantity")
+  targetPrice       Decimal? @db.Decimal(10, 2) @map("target_price")
+  note              String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  request   WholesaleOrderRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  requestId String                @map("request_id")
+
+  product   Product @relation(fields: [productId], references: [id])
+  productId String  @map("product_id")
+
+  variant   ProductVariant? @relation(fields: [variantId], references: [id])
+  variantId String?         @map("variant_id")
+
+  @@map("wholesale_order_request_items")
+}
+
+model OrderItem {
+  id         String  @id @default(uuid())
+  quantity   Int
+  unitPrice  Decimal @db.Decimal(10, 2)
+  totalPrice Decimal @db.Decimal(10, 2)
+
+  order   Order  @relation(fields: [orderId], references: [id])
+  orderId String
+
+  product   Product @relation(fields: [productId], references: [id])
+  productId String
+
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
+  variantId String
+
+  @@map("order_items")
+}
+
+model OrderStatusLog {
+  id        String   @id @default(uuid())
+  status    String
+  note      String?
+  createdAt DateTime @default(now())
+
+  order   Order  @relation(fields: [orderId], references: [id])
+  orderId String
+
+  @@map("order_status_logs")
+}
+
+// ======================================================
+// 💳 10. PAYMENT & SHIPPING
+// ======================================================
+
+model Payment {
+  id            String                   @id @default(uuid())
+  amount        Decimal                  @db.Decimal(10, 2)
+  method        String
+  transactionId String?
+  status        PaymentTransactionStatus @default(pending)
+  paidAt        DateTime?
+
+  order   Order  @relation(fields: [orderId], references: [id])
+  orderId String
+
+  @@map("payments")
+}
+
+model Shipment {
+  id             String    @id @default(uuid())
+  courierName    String
+  trackingNumber String?
+  shippedAt      DateTime?
+  deliveredAt    DateTime?
+
+  order   Order  @relation(fields: [orderId], references: [id])
+  orderId String
+
+  @@map("shipments")
+}
+
+// ======================================================
+// 🎟️ 11. COUPONS
+// ======================================================
+
+model Coupon {
+  id        String     @id @default(uuid())
+  code      String     @unique
+  type      CouponType
+  value     Decimal
+  maxUsage  Int
+  usedCount Int        @default(0)
+  expiresAt DateTime?
+
+  @@map("coupons")
+}
+
+// ======================================================
+// ⭐ 12. REVIEWS
+// ======================================================
+
+model Review {
+  id         String   @id @default(uuid())
+  rating     Int
+  comment    String?
+  isApproved Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  product   Product @relation(fields: [productId], references: [id])
+  productId String
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
+
+  @@map("reviews")
+}
+
+// ======================================================
+// 🔔 13. NOTIFICATIONS & LOGS
+// ======================================================
+
+model Notification {
+  id        String   @id @default(uuid())
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
+
+  @@map("notifications")
+}
+
+model ActivityLog {
+  id         String   @id @default(uuid())
+  action     String
+  entityType String?
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
+
+  @@map("activity_logs")
+}
+
+// ======================================================
+// ⚙️ 14. SETTINGS SYSTEM
+// ======================================================
+
+model Setting {
+  id        String   @id @default(uuid())
+  shopName  String?   @map("shop_name")
+  logo      String?
+  icon      String?
+  favicon   String?
+  branchName    String?   @map("branch_name")
+  branchAddress String?   @map("branch_address")
+  branchLat     Float?    @map("branch_lat")
+  branchLng     Float?    @map("branch_lng")
+  copyrightYear String? @map("copyright_year")
+  parentCompany       String? @map("parent_company")
+  parentCompanyLink   String? @map("parent_company_link")
+  slogan    String?
+  contactNumber Json?  @map("contact_number")
+  email     Json?
+  socialContact Json?  @map("social_contact")
+  currency  String   @default("BDT")
+  language  String   @default("en")
+  fraudCheckApiKey           String?  @map("fraud_check_api_key")
+  isFraudChecking            Boolean  @default(false) @map("is_fraud_checking")
+  fraudCheckingThreshold     Int      @default(0) @map("fraud_checking_threshold")
+  fraudCheckingSuccessRate   Decimal? @map("fraud_checking_success_rate") @db.Decimal(5, 2)
+
+  deliveryChargeInside       Decimal? @map("delivery_charge_inside") @default(0) @db.Decimal(10, 2)
+  deliveryChargeOutside      Decimal? @map("delivery_charge_outside") @default(0) @db.Decimal(10, 2)
+  deliveryChargeNearCity     Decimal? @map("delivery_charge_near_city") @default(0) @db.Decimal(10, 2)
+  youtubeUrl                 String?  @map("youtube_url")
+  youtubeThumbnailImage      String?  @map("youtube_thumbnail_image")
+  youtubeTitle               String?  @map("youtube_title")
+  youtubeDescription         String?  @map("youtube_description")
+  youtubeMetaData            Json?    @map("youtube_meta_data")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @default(now()) @map("updated_at")
+
+  @@map("settings")
+}
+
+// ======================================================
+// 📋 15. POLICIES SYSTEM
+// ======================================================
+
+model Policy {
+  id         String @id @default(uuid())
+  delivery   Json?
+  return     Json?
+  refund     Json?
+  cancellation Json?
+  privacy    Json?
+  terms      Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @default(now()) @map("updated_at")
+
+  @@map("policies")
+}
+
+// ======================================================
+// 📐 16. SECTIONS SYSTEM
+// ======================================================
+
+model Section {
+  id        String   @id @default(uuid())
+  position  Int
+  title     String
+  page      String
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @default(now()) @map("updated_at")
+
+  campaigns Campaign[]
+
+  @@map("sections")
+}
+
+// ======================================================
+// 🎯 17. CAMPAIGNS SYSTEM
+// ======================================================
+
+model Campaign {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  hasDiscount Boolean  @default(false) @map("has_discount")
+  discountId  String?  @map("discount_id")
+  startAt     DateTime @map("start_at")
+  endAt       DateTime? @map("end_at")
+  status      String   @default("active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @default(now()) @map("updated_at")
+
+  section   Section          @relation(fields: [sectionId], references: [id])
+  sectionId String           @map("section_id")
+  images    CampaignImage[]
+  discount  ProductDiscount? @relation(fields: [discountId], references: [id])
+
+  @@map("campaigns")
+}
+
+// ======================================================
+// 🖼️ 18. CAMPAIGN IMAGES SYSTEM
+// ======================================================
+
+model CampaignImage {
+  id         String   @id @default(uuid())
+  images     Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @default(now()) @map("updated_at")
+
+  campaign   Campaign @relation(fields: [campaignId], references: [id])
+  campaignId String   @map("campaign_id")
+
+  @@map("campaign_images")
+}
+
+// ======================================================
+// 📰 18.1 NEWS / BLOG SYSTEM
+// ======================================================
+
+model News {
+  id            String    @id @default(uuid())
+  title         String
+  slug          String    @unique
+  excerpt       String?   @db.Text
+  content       String    @db.Text
+  coverImageUrl String?   @map("cover_image_url")
+  author        String?
+  isPublished   Boolean   @default(false) @map("is_published")
+  publishedAt   DateTime? @map("published_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @default(now()) @map("updated_at")
+
+  @@map("news")
+}
+
+// ======================================================
+// 🏷️ 19. PRODUCT DISCOUNTS SYSTEM
+// ======================================================
+
+model ProductDiscount {
+  id        String       @id @default(uuid())
+  name      String
+  type      DiscountType
+  value     Decimal      @db.Decimal(10, 2)
+  startDate DateTime?    @map("start_date")
+  endDate   DateTime?    @map("end_date")
+  status    String       @default("active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @default(now()) @map("updated_at")
+
+  products  DiscountProduct[]
+  campaigns Campaign[]
+
+  @@map("product_discounts")
+}
+
+model DiscountProduct {
+  discount   ProductDiscount @relation(fields: [discountId], references: [id])
+  discountId String          @map("discount_id")
+  product    Product         @relation(fields: [productId], references: [id])
+  productId  String          @map("product_id")
+
+  @@id([discountId, productId])
+  @@map("discount_products")
+}
