@@ -35,7 +35,7 @@ async function bootstrap() {
   );
 
   const config = new DocumentBuilder()
-    .setTitle('NeoComerz API')
+    .setTitle('Mango Express Naogaon API')
     .setDescription('E-commerce API documentation')
     .setVersion('1.0')
     .addBearerAuth()
